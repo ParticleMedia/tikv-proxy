@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,11 @@ type ServerResult struct {
 	Status int `json:"status"`
 	Message string `json:"msg,omitempty"`
 	Data map[string]interface{} `json:"data,omitempty"`
+}
+
+type KVPair struct {
+	Key string `json:"key"`
+	Value string `json:"value"`
 }
 
 type LogInfo map[string]interface{}
@@ -94,6 +100,7 @@ func (s *ProxyServer) Close() error {
 func (s *ProxyServer) Register() error {
 	s.mux.HandleFunc("/ping", s.wrapper(s.ping))
 	s.mux.HandleFunc("/get", s.wrapper(s.get))
+	s.mux.HandleFunc("/del", s.wrapper(s.del))
 	return nil
 }
 
@@ -127,6 +134,23 @@ func (s *ProxyServer) writeResponse(w http.ResponseWriter, statusCode int, resul
 	return statusCode
 }
 
+func (s *ProxyServer) responseOK(w http.ResponseWriter) int {
+	return s.writeResponse(w, 200, &ServerResult{
+		Status: 0,
+		Message: "OK",
+		Data: nil,
+	})
+}
+
+func (s *ProxyServer) responseError(w http.ResponseWriter, statusCode int, message string, l *LogInfo) int {
+	l.set("message", message)
+	return s.writeResponse(w, statusCode, &ServerResult{
+		Status: -1,
+		Message: message,
+		Data: nil,
+	})
+}
+
 func (s *ProxyServer) ping(w http.ResponseWriter, r *http.Request, l *LogInfo) int {
 	return s.writeResponse(w, 200, &ServerResult{
 		Status: 0,
@@ -136,15 +160,14 @@ func (s *ProxyServer) ping(w http.ResponseWriter, r *http.Request, l *LogInfo) i
 }
 
 func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) int {
+	if r.Method != "GET" {
+		return s.responseError(w, 405, "Only GET is allowed", l)
+	}
 	r.ParseForm()
 	keys := strings.Split(r.Form.Get("keys"), ",")
 	l.set("keys", len(keys))
 	if len(keys) == 0 {
-		return s.writeResponse(w, 200, &ServerResult{
-			Status: 0,
-			Message: "no keys",
-			Data: nil,
-		})
+		return s.responseError(w, 400, "no keys", l)
 	}
 
 	tikvKeys := make([][]byte, 0, len(keys))
@@ -158,11 +181,7 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 
 	values, err := s.cli.BatchGet(tikvKeys)
 	if err != nil {
-		return s.writeResponse(w, 500, &ServerResult{
-			Status: -1,
-			Message: err.Error(),
-			Data: nil,
-		})
+		return s.responseError(w, 500, err.Error(), l)
 	}
 
 	var valueSize int = 0
@@ -184,17 +203,13 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 			key := string(tikvKeys[i])
 			result[key] = string(value)
 		}
-	case "raw":
+	case "base64":
 		for i, value := range(values) {
 			key := string(tikvKeys[i])
-			result[key] = value
+			result[key] = base64.StdEncoding.EncodeToString(value)
 		}
 	default:
-		return s.writeResponse(w, 500, &ServerResult{
-			Status: -1,
-			Message: fmt.Sprintf("unsupported format: %s", format),
-			Data: nil,
-		})
+		return s.responseError(w, 400, fmt.Sprintf("unsupported format: %s", format), l)
 	}
 
 	return s.writeResponse(w, 200, &ServerResult{
@@ -202,4 +217,88 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 		Message: "",
 		Data: result,
 	})
+}
+
+func (s *ProxyServer) del(w http.ResponseWriter, r *http.Request, l *LogInfo) int {
+	if r.Method != "DELETE" {
+		return s.responseError(w, 405, "Only DELETE is allowed", l)
+	}
+
+	r.ParseForm()
+	keys := strings.Split(r.Form.Get("keys"), ",")
+	l.set("keys", len(keys))
+	if len(keys) == 0 {
+		return s.writeResponse(w, 400, &ServerResult{
+			Status: 0,
+			Message: "no keys",
+			Data: nil,
+		})
+	}
+
+	tikvKeys := make([][]byte, 0, len(keys))
+	for _, k := range(keys) {
+		trimed := strings.TrimSpace(k)
+		if len(trimed) == 0 {
+			continue
+		}
+		tikvKeys =  append(tikvKeys, []byte(trimed))
+	}
+
+	err := s.cli.BatchDelete(tikvKeys)
+	if err != nil {
+		return s.responseError(w, 500, err.Error(), l)
+	}
+	return s.responseOK(w)
+}
+
+func parseValue(value string, format string) ([]byte, error) {
+	switch strings.ToLower(format) {
+	case "string":
+		return []byte(value), nil
+	case "base64":
+		return base64.StdEncoding.DecodeString(value)
+	default:
+		return nil, errors.New(fmt.Sprintf("unsupported format: %s", format))
+	}
+}
+
+func (s *ProxyServer) set(w http.ResponseWriter, r *http.Request, l *LogInfo) int {
+	if r.Method != "POST" {
+		return s.responseError(w, 405, "Only POST is allowed", l)
+	}
+
+	r.ParseForm()
+	format := r.Form.Get("format")
+	if len(format) == 0 {
+		format = "string"
+	}
+	l.set("format", format)
+
+	var data []KVPair
+	decoder := json.NewDecoder(r.Body)
+    err := decoder.Decode(&data)
+	l.set("keys", len(data))
+
+	tikvKeys := make([][]byte, 0, len(data))
+	tikvVals := make([][]byte, 0, len(data))
+	var valueSize int = 0
+	for _, kv := range(data) {
+		if len(kv.Key) == 0 || len(kv.Value) == 0 {
+			return s.responseError(w, 400, "invalid key or value", l)
+		}
+		value, valErr := parseValue(kv.Value, format)
+		if valErr != nil {
+			return s.responseError(w, 400, valErr.Error(), l)
+		}
+		tikvKeys = append(tikvKeys, []byte(kv.Key))
+		tikvVals = append(tikvVals, value)
+		valueSize += len(value)
+	}
+	l.set("size", valueSize)
+
+	err = s.cli.BatchPut(tikvKeys, tikvVals)
+	if err != nil {
+		return s.responseError(w, 500, err.Error(), l)
+	}
+	return s.responseOK(w)
 }
