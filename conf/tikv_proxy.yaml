@@ -1,0 +1,16 @@
+listen_port: 9700
+
+log:
+  info_level: 3
+  sample_rate: 100
+
+server:
+  read_timeout_ms: 5000
+  read_header_timeout_ms: 5000
+  write_timeout_ms: 5000
+  idle_timeout_min: 5
+
+tikv:
+  pd_addrs:
+    - 172.31.22.79:2379
+  conn_timeout_ms: 5000

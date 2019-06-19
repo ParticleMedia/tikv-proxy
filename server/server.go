@@ -1,0 +1,205 @@
+package server
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/ParticleMedia/tikv-proxy/common"
+	"github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/store/tikv"
+	"math/rand"
+	"net/http"
+	"strings"
+	"time"
+	"github.com/golang/glog"
+)
+
+type ProxyServer struct {
+	cli *tikv.RawKVClient;
+    mux *http.ServeMux
+}
+
+type ServerResult struct {
+	Status int `json:"status"`
+	Message string `json:"msg,omitempty"`
+	Data map[string]interface{} `json:"data,omitempty"`
+}
+
+type LogInfo map[string]interface{}
+
+type HandleFuncInner func(http.ResponseWriter, *http.Request, *LogInfo) int
+
+func NewLogInfo() *LogInfo  {
+	return &LogInfo{}
+}
+
+func (l *LogInfo) set(key string, value interface{}) {
+	(*l)[key] = value
+}
+
+func (l *LogInfo) toString() string {
+	if l == nil || len(*l) == 0 {
+		return ""
+	}
+	splits := make([]string, 0, len(*l))
+	for k, v := range(*l) {
+		splits = append(splits, fmt.Sprintf("%s:%v", k, v))
+	}
+	return strings.Join(splits, " ")
+}
+
+func NewProxyServer(mux *http.ServeMux) (*ProxyServer, error) {
+    // create tikv client
+	timeout := time.Duration(common.ProxyConfig.Tikv.ConnTimeout)  * time.Millisecond
+
+	ch := make(chan interface{})
+	go func(pdAddr []string) {
+		cli, err := tikv.NewRawKVClient(pdAddr, config.Security{});
+		if err != nil {
+			ch <- err
+		} else {
+			ch <- cli
+		}
+	}(common.ProxyConfig.Tikv.PdAddrs)
+
+	select {
+	case ret := <-ch:
+		if err, ok := ret.(error); ok {
+			return nil, err
+		} else if cli, ok := ret.(*tikv.RawKVClient); ok {
+			server := &ProxyServer{
+				cli:cli,
+				mux:mux,
+			}
+			err := server.Register()
+			return server, err
+		} else {
+			return nil, errors.New("Unknow error, should not happen")
+		}
+	case <-time.After(timeout):
+		return nil, errors.New("create tikv client timeout")
+	}
+	return nil, errors.New("Unknow error, should not happen")
+}
+
+func (s *ProxyServer) Close() error {
+	if s != nil && s.cli != nil {
+		err := s.cli.Close()
+		s.cli = nil
+		return err
+	}
+	return nil
+}
+
+func (s *ProxyServer) Register() error {
+	s.mux.HandleFunc("/ping", s.wrapper(s.ping))
+	s.mux.HandleFunc("/get", s.wrapper(s.get))
+	return nil
+}
+
+func (s *ProxyServer) wrapper(handlerFunc HandleFuncInner) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		l := NewLogInfo()
+		start := time.Now()
+		code := handlerFunc(w, r, l)
+		cost := time.Since(start).Nanoseconds() / 1000
+
+		randInt := uint32(rand.Intn(100))
+		if randInt <= common.ProxyConfig.Log.SampleRate {
+			// 打印日志抽样控制
+			glog.Infof("method=%s uri=%s status=%d cost=%d %s", r.Method, r.RequestURI, code, cost, l.toString())
+		}
+	}
+}
+
+func (s *ProxyServer) writeResponse(w http.ResponseWriter, statusCode int, result *ServerResult) int {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if result != nil {
+		encoder := json.NewEncoder(w)
+		err := encoder.Encode(*result)
+		if err != nil {
+			glog.Warningf("encode response %+v to json error: %+v", result, err)
+			return 500
+		}
+		return statusCode
+	}
+	return statusCode
+}
+
+func (s *ProxyServer) ping(w http.ResponseWriter, r *http.Request, l *LogInfo) int {
+	return s.writeResponse(w, 200, &ServerResult{
+		Status: 0,
+		Message: "pong",
+		Data: nil,
+	})
+}
+
+func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) int {
+	r.ParseForm()
+	keys := strings.Split(r.Form.Get("keys"), ",")
+	l.set("keys", len(keys))
+	if len(keys) == 0 {
+		return s.writeResponse(w, 200, &ServerResult{
+			Status: 0,
+			Message: "no keys",
+			Data: nil,
+		})
+	}
+
+	tikvKeys := make([][]byte, 0, len(keys))
+	for _, k := range(keys) {
+		trimed := strings.TrimSpace(k)
+		if len(trimed) == 0 {
+			continue
+		}
+		tikvKeys =  append(tikvKeys, []byte(trimed))
+	}
+
+	values, err := s.cli.BatchGet(tikvKeys)
+	if err != nil {
+		return s.writeResponse(w, 500, &ServerResult{
+			Status: -1,
+			Message: err.Error(),
+			Data: nil,
+		})
+	}
+
+	var valueSize int = 0
+	for _, value := range(values) {
+		valueSize += len(value)
+	}
+	l.set("size", valueSize)
+
+	result := make(map[string]interface{})
+	format := r.Form.Get("format")
+	if len(format) == 0 {
+		format = "string"
+	}
+	l.set("format", format)
+
+	switch strings.ToLower(format) {
+	case "string":
+		for i, value := range(values) {
+			key := string(tikvKeys[i])
+			result[key] = string(value)
+		}
+	case "raw":
+		for i, value := range(values) {
+			key := string(tikvKeys[i])
+			result[key] = value
+		}
+	default:
+		return s.writeResponse(w, 500, &ServerResult{
+			Status: -1,
+			Message: fmt.Sprintf("unsupported format: %s", format),
+			Data: nil,
+		})
+	}
+
+	return s.writeResponse(w, 200, &ServerResult{
+		Status: 0,
+		Message: "",
+		Data: result,
+	})
+}
