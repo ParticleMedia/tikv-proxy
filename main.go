@@ -53,9 +53,8 @@ func handleSignal(c <-chan os.Signal) {
         switch s {
         case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
             glog.Infof("Exti with signal: %v", s)
-            glog.Flush()
-
             releaseGlobalResources()
+            glog.Flush()
             os.Exit(0)
         }
     }
