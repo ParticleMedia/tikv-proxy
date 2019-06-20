@@ -170,6 +170,9 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	if len(keys) == 0 {
 		return s.responseError(w, 400, "no keys", l)
 	}
+	if common.ProxyConfig.Limit.MaxGetKeys > 0 && int32(len(keys)) > common.ProxyConfig.Limit.MaxGetKeys {
+		return s.responseError(w, 400, "key count exceed limit", l)
+	}
 
 	format := r.Form.Get("format")
 	l.set("format", format)
@@ -231,11 +234,10 @@ func (s *ProxyServer) del(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	keys := strings.Split(r.Form.Get("keys"), ",")
 	l.set("keys", len(keys))
 	if len(keys) == 0 {
-		return s.writeResponse(w, 400, &ServerResult{
-			Status: 0,
-			Message: "no keys",
-			Data: nil,
-		})
+		return s.responseError(w, 400, "no keys", l)
+	}
+	if common.ProxyConfig.Limit.MaxDelKeys > 0 && int32(len(keys)) > common.ProxyConfig.Limit.MaxDelKeys {
+		return s.responseError(w, 400, "key count exceed limit", l)
 	}
 
 	tikvKeys := make([][]byte, 0, len(keys))
@@ -286,6 +288,10 @@ func (s *ProxyServer) set(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	decoder := json.NewDecoder(r.Body)
     err := decoder.Decode(&data)
 	l.set("keys", len(data))
+
+	if common.ProxyConfig.Limit.MaxSetKeys > 0 && int32(len(data)) > common.ProxyConfig.Limit.MaxSetKeys {
+		return s.responseError(w, 400, "key count exceed limit", l)
+	}
 
 	tikvKeys := make([][]byte, 0, len(data))
 	tikvVals := make([][]byte, 0, len(data))

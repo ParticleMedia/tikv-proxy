@@ -11,6 +11,12 @@ var ProxyConfig *Config
 type Config struct {
 	ListenPort uint32 `yaml:"listen_port"`
 
+	Limit struct {
+		MaxGetKeys int32 `yaml:"max_get_keys"`
+		MaxDelKeys int32 `yaml:"max_del_keys"`
+		MaxSetKeys int32 `yaml:"max_set_keys"`
+	} `yaml:"limit"`
+
 	Server struct {
 		ReadTimeout uint32 `yaml:"read_timeout_ms"`
 		ReadHeaderTimeout uint32 `yaml:"read_header_timeout_ms"`
