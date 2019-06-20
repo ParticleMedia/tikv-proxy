@@ -49,7 +49,7 @@ func (l *LogInfo) toString() string {
 	}
 	splits := make([]string, 0, len(*l))
 	for k, v := range(*l) {
-		splits = append(splits, fmt.Sprintf("%s:%v", k, v))
+		splits = append(splits, fmt.Sprintf("%s=%v", k, v))
 	}
 	return strings.Join(splits, " ")
 }
@@ -101,6 +101,7 @@ func (s *ProxyServer) Register() error {
 	s.mux.HandleFunc("/ping", s.wrapper(s.ping))
 	s.mux.HandleFunc("/get", s.wrapper(s.get))
 	s.mux.HandleFunc("/del", s.wrapper(s.del))
+	s.mux.HandleFunc("/set", s.wrapper(s.set))
 	return nil
 }
 
@@ -170,6 +171,22 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 		return s.responseError(w, 400, "no keys", l)
 	}
 
+	format := r.Form.Get("format")
+	l.set("format", format)
+	if len(format) == 0 {
+		format = "string"
+	}
+
+	var valueParseFunc func([]byte) string
+	switch strings.ToLower(format) {
+	case "string":
+		valueParseFunc = func (v []byte) string { return string(v) }
+	case "base64":
+		valueParseFunc = base64.StdEncoding.EncodeToString
+	default:
+		return s.responseError(w, 400, fmt.Sprintf("unsupported format: %s", format), l)
+	}
+
 	tikvKeys := make([][]byte, 0, len(keys))
 	for _, k := range(keys) {
 		trimed := strings.TrimSpace(k)
@@ -181,6 +198,7 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 
 	values, err := s.cli.BatchGet(tikvKeys)
 	if err != nil {
+		glog.Warningf("BatchGet tikv error: %+v", err)
 		return s.responseError(w, 500, err.Error(), l)
 	}
 
@@ -191,25 +209,10 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	l.set("size", valueSize)
 
 	result := make(map[string]interface{})
-	format := r.Form.Get("format")
-	if len(format) == 0 {
-		format = "string"
-	}
-	l.set("format", format)
 
-	switch strings.ToLower(format) {
-	case "string":
-		for i, value := range(values) {
-			key := string(tikvKeys[i])
-			result[key] = string(value)
-		}
-	case "base64":
-		for i, value := range(values) {
-			key := string(tikvKeys[i])
-			result[key] = base64.StdEncoding.EncodeToString(value)
-		}
-	default:
-		return s.responseError(w, 400, fmt.Sprintf("unsupported format: %s", format), l)
+	for i, value := range(values) {
+		key := string(tikvKeys[i])
+		result[key] = valueParseFunc(value)
 	}
 
 	return s.writeResponse(w, 200, &ServerResult{
@@ -246,6 +249,7 @@ func (s *ProxyServer) del(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 
 	err := s.cli.BatchDelete(tikvKeys)
 	if err != nil {
+		glog.Warningf("BatchDelete tikv error: %+v", err)
 		return s.responseError(w, 500, err.Error(), l)
 	}
 	return s.responseOK(w)
@@ -266,13 +270,17 @@ func (s *ProxyServer) set(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	if r.Method != "POST" {
 		return s.responseError(w, 405, "Only POST is allowed", l)
 	}
+	contentType := strings.TrimSpace(r.Header.Get("Content-Type"))
+	if !strings.HasPrefix(contentType, "application/json") {
+		return s.responseError(w, 405, "Content-Type should be json", l)
+	}
 
 	r.ParseForm()
 	format := r.Form.Get("format")
+	l.set("format", format)
 	if len(format) == 0 {
 		format = "string"
 	}
-	l.set("format", format)
 
 	var data []KVPair
 	decoder := json.NewDecoder(r.Body)
@@ -298,6 +306,7 @@ func (s *ProxyServer) set(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 
 	err = s.cli.BatchPut(tikvKeys, tikvVals)
 	if err != nil {
+		glog.Warningf("BatchPut tikv error: %+v", err)
 		return s.responseError(w, 500, err.Error(), l)
 	}
 	return s.responseOK(w)
