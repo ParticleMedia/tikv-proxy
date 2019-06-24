@@ -7,4 +7,6 @@ LOG_LEVEL=16
 ALSO_LOG_TO_STDERR=true
 
 mkdir -p ${LOG_DIR}
-./tikv_proxy -conf=${CONF_PATH} -log_dir=${LOG_DIR} -v=${LOG_LEVEL} -alsologtostderr=${ALSO_LOG_TO_STDERR}
+echo $$ >./pid
+exec ./tikv_proxy -conf=${CONF_PATH} -log_dir=${LOG_DIR} -v=${LOG_LEVEL} -alsologtostderr=${ALSO_LOG_TO_STDERR}
+rm -f ./pid
