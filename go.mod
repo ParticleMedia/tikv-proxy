@@ -28,6 +28,7 @@ require (
 	github.com/pingcap/tidb v0.0.0-20190530163712-5ea2830cd779
 	github.com/pingcap/tipb v0.0.0-20190617140251-c0b8f1a8c839 // indirect
 	github.com/prometheus/client_golang v1.0.0 // indirect
+	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a
 	github.com/remyoudompheng/bigfft v0.0.0-20190512091148-babf20351dd7 // indirect
 	github.com/sirupsen/logrus v1.4.2 // indirect
 	github.com/soheilhy/cmux v0.1.4 // indirect

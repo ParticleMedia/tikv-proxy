@@ -6,6 +6,8 @@ import (
     "github.com/ParticleMedia/tikv-proxy/server"
     "github.com/golang/glog"
     "github.com/ParticleMedia/tikv-proxy/common"
+    "github.com/rcrowley/go-metrics"
+    "log"
     "net"
     "net/http"
     "os"
@@ -33,6 +35,9 @@ func initGlobalResources() {
     }
     glog.Infof("Load config file: %+v success", *configFile)
     glog.V(16).Infof("config content: %+v", *common.ProxyConfig)
+
+    // log metrics
+    go metrics.Log(metrics.DefaultRegistry, 1 * time.Minute, log.New(os.Stderr, "metrics: ", log.Lmicroseconds))
 }
 
 func releaseGlobalResources() {
@@ -46,6 +51,7 @@ func releaseGlobalResources() {
         proxyServer = nil
     }
 
+    metrics.DefaultRegistry.UnregisterAll()
 }
 
 func handleSignal(c <-chan os.Signal) {

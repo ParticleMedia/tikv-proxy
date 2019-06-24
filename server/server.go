@@ -8,6 +8,7 @@ import (
 	"github.com/ParticleMedia/tikv-proxy/common"
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/store/tikv"
+	"github.com/rcrowley/go-metrics"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -98,19 +99,22 @@ func (s *ProxyServer) Close() error {
 }
 
 func (s *ProxyServer) Register() error {
-	s.mux.HandleFunc("/ping", s.wrapper(s.ping))
-	s.mux.HandleFunc("/get", s.wrapper(s.get))
-	s.mux.HandleFunc("/del", s.wrapper(s.del))
-	s.mux.HandleFunc("/set", s.wrapper(s.set))
+	s.mux.HandleFunc("/ping", s.wrapper(s.ping, "ping"))
+	s.mux.HandleFunc("/get", s.wrapper(s.get, "get"))
+	s.mux.HandleFunc("/del", s.wrapper(s.del, "del"))
+	s.mux.HandleFunc("/set", s.wrapper(s.set, "set"))
 	return nil
 }
 
-func (s *ProxyServer) wrapper(handlerFunc HandleFuncInner) http.HandlerFunc {
+func (s *ProxyServer) wrapper(handlerFunc HandleFuncInner, metricName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		metrics.GetOrRegisterMeter(fmt.Sprintf("tikv_%s_qps", metricName), nil).Mark(1)
 		l := NewLogInfo()
 		start := time.Now()
 		code := handlerFunc(w, r, l)
-		cost := time.Since(start).Nanoseconds() / 1000
+		duration := time.Since(start)
+		cost := duration.Nanoseconds() / 1000
+		metrics.GetOrRegisterTimer(fmt.Sprintf("tikv_%s_latency", metricName), nil).Update(duration)
 
 		randInt := uint32(rand.Intn(100))
 		if randInt <= common.ProxyConfig.Log.SampleRate {
@@ -167,6 +171,7 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	r.ParseForm()
 	keys := strings.Split(r.Form.Get("keys"), ",")
 	l.set("keys", len(keys))
+	metrics.GetOrRegisterMeter("tikv_get_kps", nil).Mark(int64(len(keys)))
 	if len(keys) == 0 {
 		return s.responseError(w, 400, "no keys", l)
 	}
@@ -233,6 +238,7 @@ func (s *ProxyServer) del(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	r.ParseForm()
 	keys := strings.Split(r.Form.Get("keys"), ",")
 	l.set("keys", len(keys))
+	metrics.GetOrRegisterMeter("tikv_del_kps", nil).Mark(int64(len(keys)))
 	if len(keys) == 0 {
 		return s.responseError(w, 400, "no keys", l)
 	}
@@ -288,6 +294,7 @@ func (s *ProxyServer) set(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	decoder := json.NewDecoder(r.Body)
     err := decoder.Decode(&data)
 	l.set("keys", len(data))
+	metrics.GetOrRegisterMeter("tikv_set_kps", nil).Mark(int64(len(data)))
 
 	if common.ProxyConfig.Limit.MaxSetKeys > 0 && int32(len(data)) > common.ProxyConfig.Limit.MaxSetKeys {
 		return s.responseError(w, 400, "key count exceed limit", l)
