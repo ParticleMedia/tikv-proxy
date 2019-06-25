@@ -21,6 +21,7 @@ const (
 )
 
 var configFile = flag.String("conf",defaultConfigPath,"path of config")
+var metricsToTsdb = flag.Bool("metrics_to_tsdb",false,"push metrics to tsdb")
 var proxyServer *server.ProxyServer = nil
 var httpServer *http.Server = nil
 
@@ -36,7 +37,14 @@ func initGlobalResources() {
     glog.Infof("Load config file: %+v success", *configFile)
     glog.V(16).Infof("config content: %+v", *common.ProxyConfig)
 
-    // log metrics
+    // emit metrics
+    if *metricsToTsdb {
+        addr, tsdbErr := net.ResolveTCPAddr("tcp", common.ProxyConfig.Tsdb.Addr)
+        if tsdbErr != nil {
+            glog.Fatalf("resolve tsdb address %s error: %+v", common.ProxyConfig.Tsdb.Addr, tsdbErr)
+        }
+        go metrics.OpenTSDB(metrics.DefaultRegistry, time.Duration(common.ProxyConfig.Tsdb.Duration) * time.Minute, common.ProxyConfig.Tsdb.Prefix, addr)
+    }
     go metrics.Log(metrics.DefaultRegistry, 1 * time.Minute, log.New(os.Stderr, "metrics: ", log.Lmicroseconds))
 }
 

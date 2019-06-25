@@ -108,13 +108,13 @@ func (s *ProxyServer) Register() error {
 
 func (s *ProxyServer) wrapper(handlerFunc HandleFuncInner, metricName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		metrics.GetOrRegisterMeter(fmt.Sprintf("tikv_%s_qps", metricName), nil).Mark(1)
+		metrics.GetOrRegisterMeter(fmt.Sprintf("%s.qps", metricName), nil).Mark(1)
 		l := NewLogInfo()
 		start := time.Now()
 		code := handlerFunc(w, r, l)
 		duration := time.Since(start)
 		cost := duration.Nanoseconds() / 1000
-		metrics.GetOrRegisterTimer(fmt.Sprintf("tikv_%s_latency", metricName), nil).Update(duration)
+		metrics.GetOrRegisterTimer(fmt.Sprintf("%s.latency", metricName), nil).Update(duration)
 
 		randInt := uint32(rand.Intn(100))
 		if randInt <= common.ProxyConfig.Log.SampleRate {
@@ -171,7 +171,7 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	r.ParseForm()
 	keys := strings.Split(r.Form.Get("keys"), ",")
 	l.set("keys", len(keys))
-	metrics.GetOrRegisterMeter("tikv_get_kps", nil).Mark(int64(len(keys)))
+	metrics.GetOrRegisterMeter("get.kps", nil).Mark(int64(len(keys)))
 	if len(keys) == 0 {
 		return s.responseError(w, 400, "no keys", l)
 	}
@@ -201,7 +201,7 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 		if len(trimed) == 0 {
 			continue
 		}
-		tikvKeys =  append(tikvKeys, []byte(trimed))
+		tikvKeys = append(tikvKeys, []byte(trimed))
 	}
 
 	values, err := s.cli.BatchGet(tikvKeys)
@@ -211,10 +211,12 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	}
 
 	var valueSize int = 0
-	for _, value := range(values) {
+	for i, value := range(values) {
+		valueSize += len(tikvKeys[i])
 		valueSize += len(value)
 	}
 	l.set("size", valueSize)
+	metrics.GetOrRegisterMeter("get.bps", nil).Mark(int64(valueSize))
 
 	result := make(map[string]interface{})
 
@@ -238,7 +240,7 @@ func (s *ProxyServer) del(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	r.ParseForm()
 	keys := strings.Split(r.Form.Get("keys"), ",")
 	l.set("keys", len(keys))
-	metrics.GetOrRegisterMeter("tikv_del_kps", nil).Mark(int64(len(keys)))
+	metrics.GetOrRegisterMeter("del.kps", nil).Mark(int64(len(keys)))
 	if len(keys) == 0 {
 		return s.responseError(w, 400, "no keys", l)
 	}
@@ -294,7 +296,7 @@ func (s *ProxyServer) set(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	decoder := json.NewDecoder(r.Body)
     err := decoder.Decode(&data)
 	l.set("keys", len(data))
-	metrics.GetOrRegisterMeter("tikv_set_kps", nil).Mark(int64(len(data)))
+	metrics.GetOrRegisterMeter("set.kps", nil).Mark(int64(len(data)))
 
 	if common.ProxyConfig.Limit.MaxSetKeys > 0 && int32(len(data)) > common.ProxyConfig.Limit.MaxSetKeys {
 		return s.responseError(w, 400, "key count exceed limit", l)
@@ -311,11 +313,14 @@ func (s *ProxyServer) set(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 		if valErr != nil {
 			return s.responseError(w, 400, valErr.Error(), l)
 		}
-		tikvKeys = append(tikvKeys, []byte(kv.Key))
+
+		key := []byte(kv.Key)
+		tikvKeys = append(tikvKeys, key)
 		tikvVals = append(tikvVals, value)
-		valueSize += len(value)
+		valueSize += (len(key) + len(value))
 	}
 	l.set("size", valueSize)
+	metrics.GetOrRegisterMeter("set.bps", nil).Mark(int64(valueSize))
 
 	err = s.cli.BatchPut(tikvKeys, tikvVals)
 	if err != nil {

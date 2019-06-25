@@ -17,6 +17,12 @@ type Config struct {
 		MaxSetKeys int32 `yaml:"max_set_keys"`
 	} `yaml:"limit"`
 
+	Tsdb struct {
+		Addr string `yaml:"addr"`
+		Duration uint32 `yaml:"duration_min"`
+		Prefix string `yaml:"prefix"`
+	} `yaml:"tsdb"`
+
 	Server struct {
 		ReadTimeout uint32 `yaml:"read_timeout_ms"`
 		ReadHeaderTimeout uint32 `yaml:"read_header_timeout_ms"`
