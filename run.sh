@@ -3,8 +3,8 @@ cd $(dirname $0)
 
 LOG_DIR=../log
 CONF_PATH=../conf/tikv_proxy.yaml
-LOG_LEVEL=16
-ALSO_LOG_TO_STDERR=true
+LOG_LEVEL=3
+ALSO_LOG_TO_STDERR=false
 PUSH_TSDB=true
 
 mkdir -p ${LOG_DIR}
