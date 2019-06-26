@@ -1,6 +1,6 @@
 #!/bin/bash -e
 cd $(dirname $0)
-mkdir -p output/bin output/conf output/data
+mkdir -p output/bin output/conf output/data output/log
 
 set -e
 
