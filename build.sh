@@ -16,6 +16,7 @@ go mod tidy
 CGO_ENABLED=0 go build -installsuffix -a -v -o tikv_proxy -ldflags "-s -X main.GitSHA=${GIT_SHA} -X main.BuildTime=${WHEN}" .
 
 cp run.sh output/bin/
+cp clean_log.sh output/bin/
 cp tikv_proxy output/bin/tikv_proxy
 chmod 755 output/bin/*
 cp -r conf/* output/conf/
