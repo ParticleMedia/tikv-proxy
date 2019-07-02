@@ -41,7 +41,7 @@ type Config struct {
 	} `yaml:"tikv"`
 }
 
-func (c *Config) LoadFrom(confPath string) (error) {
+func LoadConfig(confPath string) (error) {
 	//打开文件
 	filePtr, err := os.Open(confPath)
 	if err != nil {

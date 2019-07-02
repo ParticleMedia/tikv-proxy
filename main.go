@@ -27,7 +27,7 @@ var httpServer *http.Server = nil
 
 func initGlobalResources() {
     // config
-    confErr := common.ProxyConfig.LoadFrom(*configFile)
+    confErr := common.LoadConfig(*configFile)
     if confErr != nil {
         glog.Fatalf("failed to config: %+v", confErr)
     }
