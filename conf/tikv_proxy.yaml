@@ -1,7 +1,7 @@
 listen_port: 9700
 
 limit:
-  max_get_keys: 1000
+  max_get_keys: 3000
   max_del_keys: 1000
   max_set_keys: 1000
 
