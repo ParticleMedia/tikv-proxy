@@ -116,6 +116,14 @@ func (s *ProxyServer) wrapper(handlerFunc HandleFuncInner, metricName string) ht
 		cost := duration.Nanoseconds() / 1000
 		metrics.GetOrRegisterTimer(fmt.Sprintf("%s.latency", metricName), nil).Update(duration)
 
+		if code >= 400 && code <= 499 {
+			// 请求不合法
+			metrics.GetOrRegisterMeter(fmt.Sprintf("%s.invalid.qps", metricName), nil).Mark(1)
+		} else if code >= 500 && code <= 599 {
+			// 服务端错误
+			metrics.GetOrRegisterMeter(fmt.Sprintf("%s.error.qps", metricName), nil).Mark(1)
+		}
+
 		randInt := uint32(rand.Intn(100))
 		if randInt <= common.ProxyConfig.Log.SampleRate {
 			// 打印日志抽样控制
@@ -188,6 +196,8 @@ func (s *ProxyServer) get(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	var valueParseFunc func([]byte) string
 	switch strings.ToLower(format) {
 	case "string":
+		valueParseFunc = func (v []byte) string { return string(v) }
+	case "float_arr":
 		valueParseFunc = func (v []byte) string { return string(v) }
 	case "base64":
 		valueParseFunc = base64.StdEncoding.EncodeToString
