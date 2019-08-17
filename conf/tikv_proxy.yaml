@@ -6,7 +6,7 @@ limit:
   max_set_keys: 1000
 
 tsdb:
-  addr: 172.31.16.223:4242
+  addr: opentsdb.ha.nb.com:4242
   duration_min: 1
   prefix: tikv
 
