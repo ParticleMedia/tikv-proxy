@@ -12,6 +12,7 @@ import (
     "net/http"
     "os"
     "os/signal"
+    "sync"
     "syscall"
     "time"
 )
@@ -24,6 +25,7 @@ var configFile = flag.String("conf",defaultConfigPath,"path of config")
 var metricsToTsdb = flag.Bool("metrics_to_tsdb",false,"push metrics to tsdb")
 var proxyServer *server.ProxyServer = nil
 var httpServer *http.Server = nil
+var stopOnce = &sync.Once{}
 
 func initGlobalResources() {
     // config
@@ -67,7 +69,7 @@ func handleSignal(c <-chan os.Signal) {
         switch s {
         case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
             glog.Infof("Exti with signal: %v", s)
-            releaseGlobalResources()
+            stopOnce.Do(releaseGlobalResources)
             glog.Flush()
             os.Exit(0)
         }
@@ -84,7 +86,7 @@ func main() {
     defer glog.Flush()
 
     initGlobalResources()
-    defer releaseGlobalResources()
+    defer stopOnce.Do(releaseGlobalResources)
 
     //创建监听退出chan
     c := make(chan os.Signal)
