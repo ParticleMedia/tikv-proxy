@@ -12,6 +12,7 @@ import (
     "net/http"
     "os"
     "os/signal"
+    "runtime"
     "sync"
     "syscall"
     "time"
@@ -48,6 +49,7 @@ func initGlobalResources() {
         go metrics.OpenTSDB(metrics.DefaultRegistry, time.Duration(common.ProxyConfig.Tsdb.Duration) * time.Minute, common.ProxyConfig.Tsdb.Prefix, addr)
     }
     go metrics.Log(metrics.DefaultRegistry, 1 * time.Minute, log.New(os.Stderr, "metrics: ", log.Lmicroseconds))
+    metrics.GetOrRegister("goroutine.count", metrics.NewFunctionalGauge(func() int64 { return int64(runtime.NumGoroutine()) }))
 }
 
 func releaseGlobalResources() {
