@@ -127,7 +127,9 @@ func (s *ProxyServer) wrapper(handlerFunc HandleFuncInner, metricName string) ht
 		randInt := uint32(rand.Intn(100))
 		if randInt <= common.ProxyConfig.Log.SampleRate {
 			// 打印日志抽样控制
-			glog.Infof("method=%s uri=%s status=%d cost=%d %s", r.Method, r.RequestURI, code, cost, l.toString())
+			l.set("accept_encoding", r.Header.Get("Accept-Encoding"))
+			remote := r.Header.Get("x-forwarded-for")
+			glog.Infof("method=%s uri=%s remote=%s from=%s status=%d cost=%d %s", r.Method, r.RequestURI, remote, r.RemoteAddr, code, cost, l.toString())
 		}
 	}
 }

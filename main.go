@@ -3,6 +3,7 @@ package main
 import (
     "flag"
     "fmt"
+    "github.com/NYTimes/gziphandler"
     "github.com/ParticleMedia/tikv-proxy/server"
     "github.com/golang/glog"
     "github.com/ParticleMedia/tikv-proxy/common"
@@ -111,7 +112,7 @@ func main() {
 
     httpServer = &http.Server{
         Addr: addr,
-        Handler: mux,
+        Handler: gziphandler.GzipHandler(mux),
         WriteTimeout: time.Duration(common.ProxyConfig.Server.WriteTimeout) * time.Millisecond,
         ReadHeaderTimeout: time.Duration(common.ProxyConfig.Server.ReadHeaderTimeout) * time.Millisecond,
         ReadTimeout: time.Duration(common.ProxyConfig.Server.ReadTimeout) * time.Millisecond,

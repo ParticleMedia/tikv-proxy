@@ -3,6 +3,7 @@ module github.com/ParticleMedia/tikv-proxy
 go 1.12
 
 require (
+	github.com/NYTimes/gziphandler v1.1.1 // indirect
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/coreos/bbolt v1.3.3 // indirect
 	github.com/coreos/etcd v3.3.13+incompatible // indirect
