@@ -25,6 +25,8 @@ const (
 
 var configFile = flag.String("conf",defaultConfigPath,"path of config")
 var metricsToTsdb = flag.Bool("metrics_to_tsdb",false,"push metrics to tsdb")
+var metricsPrefix = flag.String("metrics_prefix", "tikv","metrics prefix for opentsdb")
+
 var proxyServer *server.ProxyServer = nil
 var httpServer *http.Server = nil
 var stopOnce = &sync.Once{}
@@ -47,7 +49,7 @@ func initGlobalResources() {
         if tsdbErr != nil {
             glog.Fatalf("resolve tsdb address %s error: %+v", common.ProxyConfig.Tsdb.Addr, tsdbErr)
         }
-        go metrics.OpenTSDB(metrics.DefaultRegistry, time.Duration(common.ProxyConfig.Tsdb.Duration) * time.Minute, common.ProxyConfig.Tsdb.Prefix, addr)
+        go metrics.OpenTSDB(metrics.DefaultRegistry, time.Duration(common.ProxyConfig.Tsdb.Duration) * time.Minute, *metricsPrefix, addr)
     }
     go metrics.Log(metrics.DefaultRegistry, 1 * time.Minute, log.New(os.Stderr, "metrics: ", log.Lmicroseconds))
     metrics.GetOrRegister("goroutine.count", metrics.NewFunctionalGauge(func() int64 { return int64(runtime.NumGoroutine()) }))
