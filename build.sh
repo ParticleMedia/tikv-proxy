@@ -17,6 +17,6 @@ CGO_ENABLED=0 go build -installsuffix -a -v -o tikv_proxy -ldflags "-s -X main.G
 
 cp run.sh output/bin/
 cp clean_log.sh output/bin/
-cp tikv_proxy output/bin/tikv_proxy
+mv tikv_proxy output/bin/tikv_proxy
 chmod 755 output/bin/*
 cp -r conf/* output/conf/
