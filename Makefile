@@ -18,7 +18,9 @@ build:
 tool:
 	mkdir -p output/tools
 	go build -v -o scan_tool tools/scan_tool.go
+	go build -v -o del_tool tools/del_tool.go
 	mv scan_tool output/tools
+	mv del_tool output/tools
 	chmod +x output/tools/*
 
 clean:
