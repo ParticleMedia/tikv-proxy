@@ -55,10 +55,9 @@ func (l *LogInfo) toString() string {
 	return strings.Join(splits, " ")
 }
 
-func NewProxyServer(mux *http.ServeMux) (*ProxyServer, error) {
-    // create tikv client
+func BuildTikvClient() (*tikv.RawKVClient, error) {
+	// create tikv client
 	timeout := time.Duration(common.ProxyConfig.Tikv.ConnTimeout)  * time.Millisecond
-
 	ch := make(chan interface{})
 	go func(pdAddr []string) {
 		cli, err := tikv.NewRawKVClient(pdAddr, config.Security{});
@@ -74,12 +73,7 @@ func NewProxyServer(mux *http.ServeMux) (*ProxyServer, error) {
 		if err, ok := ret.(error); ok {
 			return nil, err
 		} else if cli, ok := ret.(*tikv.RawKVClient); ok {
-			server := &ProxyServer{
-				cli:cli,
-				mux:mux,
-			}
-			err := server.Register()
-			return server, err
+			return cli, nil
 		} else {
 			return nil, errors.New("Unknow error, should not happen")
 		}
@@ -87,6 +81,19 @@ func NewProxyServer(mux *http.ServeMux) (*ProxyServer, error) {
 		return nil, errors.New("create tikv client timeout")
 	}
 	return nil, errors.New("Unknow error, should not happen")
+}
+
+func NewProxyServer(mux *http.ServeMux) (*ProxyServer, error) {
+	cli, err := BuildTikvClient()
+	if err != nil {
+		return nil, err
+	}
+	server := &ProxyServer{
+		cli: cli,
+		mux: mux,
+	}
+	err = server.Register()
+	return server, err
 }
 
 func (s *ProxyServer) Close() error {

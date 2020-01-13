@@ -4,7 +4,7 @@
 #to build & prepare for local run: make output
 #to run this service locally:     make output ;   ./output/bootstrap.sh output
 all:
-	make build
+	make build tool
 
 fmt:
 	find . -name "*.go" | grep -v "vendor" | grep -v "clients" | grep -v "pb.go" | xargs goimports -w
@@ -14,6 +14,12 @@ format: clean fmt
 
 build:
 	./build.sh
+
+tool:
+	mkdir -p output/tools
+	go build -v -o scan_tool tools/scan_tool.go
+	mv scan_tool output/tools
+	chmod +x output/tools/*
 
 clean:
 	rm -rf ./output
