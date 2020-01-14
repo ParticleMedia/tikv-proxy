@@ -73,12 +73,18 @@ func main() {
 		os.Exit(255)
 	}
 
+	var lineCnt int = 0
 	keys := make([][]byte, 0, *batch)
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if len(line) == 0 {
 			continue
+		}
+
+		lineCnt++
+		if lineCnt % 100000 == 0 {
+			fmt.Fprintf(os.Stderr, "processed %d lines\n", lineCnt)
 		}
 
 		keys = append(keys, []byte(line))
