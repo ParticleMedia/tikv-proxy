@@ -314,6 +314,9 @@ func (s *ProxyServer) set(w http.ResponseWriter, r *http.Request, l *LogInfo) in
 	var data []KVPair
 	decoder := json.NewDecoder(r.Body)
     err := decoder.Decode(&data)
+    if err != nil {
+    	return s.responseError(w, 400, err.Error(), l)
+	}
 	l.set("keys", len(data))
 	metrics.GetOrRegisterMeter("set.kps", nil).Mark(int64(len(data)))
 
